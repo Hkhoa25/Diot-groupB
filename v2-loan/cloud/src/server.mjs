@@ -36,8 +36,8 @@ const QUERY_API = DB_CLIENT.getQueryApi(DB_ORG);
 console.log("Connected to InfluxDB");
  
 // 4. Define '/data' endpoint to write the Data to DB
-// http://51.120.10.183/api/v1/data?value=26.0 => to database // Previously, just 1 sensor
-// http://51.120.10.183/api/v1/data?value=25.0&sensorID=sensor_1&location=kitchen
+// http://51.120.10.183/api/v1/data?value=26.0 => to database // Previously, for only 1 sensor
+// http://51.120.10.183/api/v1/data?value=25.0&sensorID=sensor_1&location=kitchen // Now, for multiple sensors
 app.get('/data', async (req, res) => {
     const {value, sensorID, location} = req.query.value;
     if (!value || sensorID || !location) {
