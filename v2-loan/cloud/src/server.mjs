@@ -1,11 +1,11 @@
 console.log('Server starting...');
 // 1. Import express and influx client
 import express from 'express';
-import { InfluxDB, Point, QueryApi} from '@influxdata/influxdb-client';
+import { InfluxDB, Point } from '@influxdata/influxdb-client';
 
 const app = express();
 const HOST = "127.0.0.1";
-const PORT = 3000;
+const PORT = 3001;
 
 // 2. Define a GET endpoint that accepts a "value" query parameter
 // app.get('/data', (req, res) => {
@@ -37,37 +37,27 @@ console.log("Connected to InfluxDB");
  
 // 4. Define '/data' endpoint to write the Data to DB
 // http://51.120.10.183/api/v1/data?value=26.0 => to database // Previously, for only 1 sensor
-// http://51.120.10.183/api/v1/data?value=25.0&sensorID=sensor_1&location=kitchen // Now, for multiple sensors
+// http://51.120.10.183/api/v1/data?value=25.0&location=kitchen // Now, for multiple sensors
 app.get('/data', async (req, res) => {
-    const {value, sensorID, location} = req.query.value;
-    if (!value || sensorID || !location) {
-        res.status(400).send('Missing query parameter "value", "sensorID" or "location"');
+    const {value, location} = req.query.value;
+    if (!value || !location) {
+        res.status(400).send('Missing query parameter "value" or "location"');
         return;
     }
 
     try {
-        // Define the valid temperature range
-        const minTemperature = -50; // Example minimum temperature
-        const maxTemperature = 50;  // Example maximum temperature
-
-        // Check if the temperature is within the valid range
-        if (value < minTemperature || value > maxTemperature) {
-            res.status(400).send({ error: 'Invalid temperature value' });
-        } else {
-            // Log received value
-            // console.log(`Received value from Pico W: ${value}`); // with 1 sensor
-            console.log(`Received value from sensor ${sensorID} at ${location}: ${value}`);
-            // Parse value and write to InfluxDB
-            const numeric_value = parseFloat(value);
-            const point = new Point("qparams");
-            point.tag("sensorID", sensorID)
-            point.tag("location", location)
-            point.floatField("value", numeric_value)
-            DB_WRITE_POINT.writePoint(point);
-            await DB_WRITE_POINT.flush();
-            // Respond to the client
-            res.send('Temperature data is valid and Data written successfully to Database!');
-        }
+        // Log received value
+        // console.log(`Received value from Pico W: ${value}`); // with 1 sensor
+        console.log(`Received value at ${location}: ${value}`);
+        // Parse value and write to InfluxDB
+        const numeric_value = parseFloat(value);
+        const point = new Point("qparams");
+        point.tag("location", location)
+        point.floatField("value", numeric_value)
+        DB_WRITE_POINT.writePoint(point);
+        await DB_WRITE_POINT.flush();
+        // Respond to the client
+        res.send('Temperature data is valid and Data written successfully to Database!');
     } catch(err) {
         console.error('Error saving data to InfluxDB!', err.message);
     res.status(500).send('Internal Server Error');
@@ -77,9 +67,9 @@ app.get('/data', async (req, res) => {
 // Define endpoint to retrieve the Data
 
 app.get('/temp', async (req, res) => {
-    const { sensorID, location } = req.query;
-    if (!sensorID || !location) {
-        res.status(400).send('Missing query parameters "sensorID" or "location"');
+    const location  = req.query;
+    if (!location) {
+        res.status(400).send('Missing query parameters "location"');
         return;
     }
     const query = `
@@ -87,7 +77,6 @@ app.get('/temp', async (req, res) => {
         |> range(start: 0)
         |> filter(fn: (r) => r._measurement == "qparams")
         |> filter(fn: (r) => r._field == "value")
-        |> filter(fn: (r) => r.sensorID == "${sensorID}")
         |> filter(fn: (r) => r.location == "${location}")
         |> keep(columns: ["_time", "_value"])
     `;
@@ -96,13 +85,34 @@ app.get('/temp', async (req, res) => {
         const data = [];
         const rows = await QUERY_API.collectRows(query);
         rows.forEach(row => {
-            data.push({ timestamp: row._time, value: row._value, sensorID: row.sensorID, location: row.location });
+            data.push({ timestamp: row._time, value: row._value, location: row.location });
         });
         res.json(data);
     } catch (err) {
         console.error('Error querying InfluxDB:', err);
         res.status(500).send('Error fetching data from InfluxDB');
     }
+});
+
+// Middleware function to validate temperature data
+function validateTemperature(req, res, next) {
+    const temperature = req.body.temperature;
+
+    const minTemperature = -50; 
+    const maxTemperature = 50; 
+
+    // Check if the temperature is within the valid range
+    if (temperature < minTemperature || temperature > maxTemperature) {
+        return res.status(400).json({ error: 'Invalid temperature value' });
+    }
+
+    // If valid, proceed to the next middleware or route handler
+    next();
+}
+
+app.post('/data', validateTemperature, (req, res) => {
+    // Handle the request with validated temperature data
+    res.status(200).json({ message: 'Temperature data is valid' });
 });
 
 // 5. Start the server
